@@ -1,4 +1,42 @@
 void Main() {
+    startnew(MonitorEditor);
+    startnew(MonitorFocus);
+}
+
+bool lastFocus = true;
+void MonitorFocus() {
+    auto app = GetApp();
+    while (true) {
+        yield();
+        // when we lose focus, deactivate all inputs
+        if (lastFocus != app.InputPort.IsFocused) {
+            lastFocus = app.InputPort.IsFocused;
+            if (!app.InputPort.IsFocused) {
+                ResetState();
+            }
+        }
+    }
+}
+
+bool lastEditor = false;
+void MonitorEditor() {
+    while (true) {
+        yield();
+        if (lastEditor != (GetApp().Editor !is null)) {
+            lastEditor = !lastEditor;
+            ResetState();
+        }
+    }
+}
+
+void ResetState() {
+    uint maxIx = Math::Max(activeKeys.Length, 3) - 1;
+    for (uint i = maxIx; i <= maxIx; i--) {
+        if (i < 2) mouseWheelLastActive[i] = 0;
+        if (i < 3) activeMouseButtons[i] = false;
+        if (i < activeKeys.Length)
+            RemoveKey(activeKeys[i]);
+    }
 }
 
 void Notify(const string &in msg) {
@@ -30,16 +68,23 @@ void RenderMenu() {
     }
 }
 
+bool IsPluginEnabled {
+    get {
+        return ShowWindow && lastEditor;
+    }
+}
+
 /** Render function called every frame.
 */
 void Render() {
-    if (!ShowWindow || GetApp().Editor is null) return;
+    if (!IsPluginEnabled) return;
     DrawKeyPresses();
 }
 
 /** Called whenever a key is pressed on the keyboard. See the documentation for the [`VirtualKey` enum](https://openplanet.dev/docs/api/global/VirtualKey).
 */
 UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
+    if (!lastFocus || !IsPluginEnabled) return UI::InputBlocking::DoNothing;
     // print(tostring(key));
     if (down) AddKey(key);
     else RemoveKey(key);
@@ -51,6 +96,7 @@ int[] mouseWheelLastActive = {0, 0};
 /** Called whenever the mouse wheel is scrolled. `x` and `y` are the scroll delta values.
 */
 UI::InputBlocking OnMouseWheel(int x, int y) {
+    if (!IsPluginEnabled) return UI::InputBlocking::DoNothing;
     if (x != 0) mouseWheelLastActive[0] = Time::Now;
     if (y != 0) mouseWheelLastActive[1] = Time::Now;
     // print('wheel: ' + x + ', ' + y);
@@ -70,6 +116,7 @@ bool[] activeMouseButtons = {false, false, false};
 * lmb = 0; rmb = 1; mmb = 2;
 */
 UI::InputBlocking OnMouseButton(bool down, int button, int x, int y) {
+    if (!lastFocus || !IsPluginEnabled) return UI::InputBlocking::DoNothing;
     activeMouseButtons[button] = down;
     return UI::InputBlocking::DoNothing;
 }
@@ -113,22 +160,3 @@ void RemoveSoon(ref@ keyBox) {
         activeKeyIndexes[int(key)] = 0;
     }
 }
-
-/** Called every frame. `dt` is the delta time (milliseconds since last frame).
-*/
-void Update(float dt) {
-    // if (activeKeys.Length == 0) return;
-    // string active = "(" + activeKeys.Length + "): ";
-    // for (uint i = 0; i < activeKeys.Length; i++) {
-    //     active += (i > 0 ? ", " : "") + activeKeys[i];
-    // }
-    // print(active);
-}
-
-// void AddSimpleTooltip(const string &in msg) {
-//     if (UI::IsItemHovered()) {
-//         UI::BeginTooltip();
-//         UI::Text(msg);
-//         UI::EndTooltip();
-//     }
-// }
