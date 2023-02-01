@@ -1,5 +1,7 @@
 # Show Editor Inputs
 
+Shows keyboard and mouse inputs while in the editor.
+
 License: Public Domain
 
 Authors: XertroV

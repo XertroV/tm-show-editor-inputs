@@ -1,6 +1,11 @@
 void Main() {
     startnew(MonitorEditor);
     startnew(MonitorFocus);
+    sleep(100);
+    if (S_FirstRun) {
+        S_FirstRun = false;
+        S_XOffset = S_YOffset * Draw::GetHeight() / Draw::GetWidth();
+    }
 }
 
 bool lastFocus = true;
@@ -22,10 +27,12 @@ bool lastEditor = false;
 void MonitorEditor() {
     while (true) {
         yield();
-        if (lastEditor != (GetApp().Editor !is null)) {
+        // don't count test driving as being in the editor
+        if (lastEditor != (GetApp().Editor !is null && GetApp().CurrentPlayground is null)) {
             lastEditor = !lastEditor;
             ResetState();
         }
+        if (!lastEditor) sleep(100);
     }
 }
 
@@ -57,27 +64,23 @@ void NotifyWarning(const string &in msg) {
 const string PluginIcon = Icons::KeyboardO;
 const string MenuTitle = "\\$2ff" + PluginIcon + "\\$z " + Meta::ExecutingPlugin().Name;
 
-// show the window immediately upon installation
-[Setting category="General" name="Enabled?"]
-bool ShowWindow = true;
-
 /** Render function called every frame intended only for menu items in `UI`. */
 void RenderMenu() {
-    if (UI::MenuItem(MenuTitle, "", ShowWindow)) {
-        ShowWindow = !ShowWindow;
+    if (UI::MenuItem(MenuTitle, "", S_Enabled)) {
+        S_Enabled = !S_Enabled;
     }
 }
 
 bool IsPluginEnabled {
     get {
-        return ShowWindow && lastEditor;
+        return S_Enabled && lastEditor;
     }
 }
 
 /** Render function called every frame.
 */
 void Render() {
-    if (!IsPluginEnabled) return;
+    if (!IsPluginEnabled && !S_Preview) return;
     DrawKeyPresses();
 }
 
