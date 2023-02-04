@@ -1,6 +1,7 @@
 void Main() {
     startnew(MonitorEditor);
-    startnew(MonitorFocus);
+    startnew(MonitorSystem);
+    startnew(MonitorStaleKeyPresses);
     sleep(100);
     if (S_FirstRun) {
         S_FirstRun = false;
@@ -9,10 +10,13 @@ void Main() {
 }
 
 bool lastFocus = true;
-void MonitorFocus() {
+float frameTime = 30.0;
+void MonitorSystem() {
     auto app = GetApp();
     while (true) {
         yield();
+        frameTime = frameTime * .9 + .1 * cast<CVisionViewport>(app.Viewport).TimeGpuMs_Total;
+        // trace(frameTime);
         // when we lose focus, deactivate all inputs
         if (lastFocus != app.InputPort.IsFocused) {
             lastFocus = app.InputPort.IsFocused;
@@ -33,6 +37,20 @@ void MonitorEditor() {
             ResetState();
         }
         if (!lastEditor) sleep(100);
+    }
+}
+
+void MonitorStaleKeyPresses() {
+    while (true) {
+        yield();
+        for (uint i = 0; i < activeKeys.Length; i++) {
+            auto ix = int(activeKeys[i]);
+            // key down events are repeated every 30-50ms after 500ms frames -- until the key is released.
+            // if we miss a key up event, we know that an active key is stale if we haven't heard from it in > 500ms.
+            if (keysLastActive[ix] + 520 < Time::Now) {
+                RemoveKey(VirtualKey(ix), true);
+            }
+        }
     }
 }
 
@@ -87,6 +105,9 @@ void Render() {
 /** Called whenever a key is pressed on the keyboard. See the documentation for the [`VirtualKey` enum](https://openplanet.dev/docs/api/global/VirtualKey).
 */
 UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
+#if DEV
+    // print(" >> " + Time::Now + " >> " + (down ? Icons::ArrowDown : Icons::ArrowUp) + " >> " + tostring(key));
+#endif
     if (!lastFocus || !IsPluginEnabled) return UI::InputBlocking::DoNothing;
     // print(tostring(key));
     if (down) AddKey(key);
@@ -128,31 +149,44 @@ VirtualKey[] activeKeys;
 // virtualkey max number is 254, so make an array of length 256 (it's neat) and we'll use this as a lookup for whether keys are active. -1 means not active
 int[] activeKeyIndexes = array<int>(256);
 int[] keysLastActive = array<int>(256);
+int[] keysStartActive = array<int>(256);
 
 void AddKey(VirtualKey key) {
-    // offset the index by 1 so default value of 0 is 'off'
+    // if the last time this key was active was more than 500 ms ago (openplanet repeates keydown events after 7 frames)
+    if (keysStartActive[int(key)] == 0 || keysLastActive[int(key)] + 520 < Time::Now)
+        keysStartActive[int(key)] = Time::Now;
     keysLastActive[int(key)] = Time::Now;
+    // offset the index by 1 so default value of 0 is 'off'
     if (activeKeyIndexes[int(key)] == 0) {
-        // insert then take length b/c of offset
+        // insert then take length b/c of +1 offset
         activeKeys.InsertLast(key);
         activeKeyIndexes[int(key)] = activeKeys.Length;
     }
 }
 
-void RemoveKey(VirtualKey key) {
+void RemoveKey(VirtualKey key, bool immediate = false) {
     keysLastActive[int(key)] = Time::Now;
-    startnew(RemoveSoon, cast<ref>(array<VirtualKey> = {key}));
+    if (!immediate) startnew(RemoveSoon, cast<ref>(array<VirtualKey> = {key}));
+    else RemoveKeyNow(key);
 }
 
-// in ms
-int _RemoveDelay = 125;
+// Min time to wait before removing a key, in ms
+int _RemoveDelay = 100;
+
 void RemoveSoon(ref@ keyBox) {
     auto @kb = cast<VirtualKey[]>(keyBox);
     if (kb is null || kb.Length == 0) return;
-    sleep(_RemoveDelay);
     VirtualKey key = kb[0];
-    if (keysLastActive[int(key)] + _RemoveDelay > int(Time::Now)) return;
+    auto delay = Math::Max(0, keysStartActive[int(key)] + _RemoveDelay - keysLastActive[int(key)]);
+    if (delay > 0)
+        sleep(delay);
+    if (keysLastActive[int(key)] + delay > int(Time::Now)) return;
+    RemoveKeyNow(key);
+}
+
+void RemoveKeyNow(VirtualKey key) {
     // subtract offset when we retrive ix
+    keysStartActive[int(key)] = 0;
     auto ix = activeKeyIndexes[int(key)] - 1;
     if (ix >= 0) {
         // trace('Removing: ' + ix + ' of ' + activeKeys.Length);
